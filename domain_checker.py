@@ -4,8 +4,10 @@ import argparse
 import whois
 import itertools
 from dotenv import load_dotenv
-import datetime
+from datetime import datetime
 import socket
+import PySimpleGUI as sg
+import threading
 
 # Load environment variables
 load_dotenv()
@@ -168,13 +170,7 @@ def suggest_cheapest_tld(base_domain):
 #
 def get_domain_info(domain):
     try:
-        import whois
-    except ImportError:
-        print("The 'python-whois' library is not installed. Please install it using 'pip install python-whois'")
-        return None
-
-    try:
-        domain_info = whois.query(domain)
+        domain_info = whois.whois(domain)
 
         if domain_info:
             print(f"\nDomain Information for {domain}:")
@@ -198,27 +194,72 @@ def get_domain_info(domain):
 
         # Fallback to basic DNS lookup
         try:
-            socket.gethostbyname(domain)
+            ip_address = socket.gethostbyname(domain)
             print(f"The domain {domain} exists (based on DNS lookup), but detailed WHOIS information is not available.")
+            print(f"IP Address: {ip_address}")
         except socket.gaierror:
             print(f"The domain {domain} does not exist or is not registered.")
 
         return None
 
+def long_operation_wrapper(func, *args, **kwargs):
+    def wrapper():
+        result = func(*args, **kwargs)
+        window.write_event_value('-THREAD-', (func.__name__, result))
+    threading.Thread(target=wrapper, daemon=True).start()
+
+def create_main_window():
+    layout = [
+        [sg.Text("Enter a domain name:"), sg.Input(key="-DOMAIN-"), sg.Button("Check")],
+        [sg.Multiline(size=(60, 15), key="-OUTPUT-", disabled=True)],
+        [sg.Button("Suggest Cheapest TLD"), sg.Button("Get Domain Info"), sg.Button("Exit")]
+    ]
+    return sg.Window("Domain Checker", layout)
+
+def main():
+    global window
+    window = create_main_window()
+
+    while True:
+        event, values = window.read()
+        if event == sg.WINDOW_CLOSED or event == "Exit":
+            break
+        elif event == "Check":
+            domain = values["-DOMAIN-"]
+            window["-OUTPUT-"].update("")
+            long_operation_wrapper(find_lowest_price, domain)
+        elif event == "Suggest Cheapest TLD":
+            domain = values["-DOMAIN-"]
+            window["-OUTPUT-"].update("")
+            long_operation_wrapper(suggest_cheapest_tld, domain)
+        elif event == "Get Domain Info":
+            domain = values["-DOMAIN-"]
+            window["-OUTPUT-"].update("")
+            long_operation_wrapper(get_domain_info, domain)
+        elif event == "-THREAD-":
+            func_name, result = values[event]
+            if func_name == "find_lowest_price":
+                best_registrar, lowest_price = result
+                if best_registrar and lowest_price:
+                    window["-OUTPUT-"].print(f"The lowest price for {values['-DOMAIN-']} is €{lowest_price:.2f}/yr at {best_registrar}")
+                else:
+                    window["-OUTPUT-"].print(f"Unable to find pricing information for {values['-DOMAIN-']}")
+            elif func_name == "suggest_cheapest_tld":
+                cheapest_domain, cheapest_price, cheapest_registrar = result
+                if cheapest_domain:
+                    window["-OUTPUT-"].print(f"Cheapest option: {cheapest_domain} at €{cheapest_price:.2f}/yr from {cheapest_registrar}")
+                else:
+                    window["-OUTPUT-"].print("No available domains found among the checked TLDs.")
+            elif func_name == "get_domain_info":
+                if result:
+                    window["-OUTPUT-"].print(f"Domain Information for {values['-DOMAIN-']}:")
+                    window["-OUTPUT-"].print(f"Registrar: {result.registrar}")
+                    window["-OUTPUT-"].print(f"Creation Date: {result.creation_date}")
+                    window["-OUTPUT-"].print(f"Expiration Date: {result.expiration_date}")
+                else:
+                    window["-OUTPUT-"].print(f"Unable to retrieve information for {values['-DOMAIN-']}")
+
+    window.close()
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Check domain availability and pricing")
-    parser.add_argument("domain", type=str, help="Domain name to be checked")
-    args = parser.parse_args()
-
-    best_registrar, lowest_price = find_lowest_price(args.domain)
-    if best_registrar and lowest_price:
-        print(f"The lowest price for {args.domain} is €{lowest_price:.2f}/yr at {best_registrar}")
-    else:
-        print(f"Unable to find pricing information for {args.domain}")
-
-    # Get domain information
-    domain_info = get_domain_info(args.domain)
-
-    # Suggest the cheapest TLD
-    print("\nSuggesting cheapest TLD options:")
-    cheapest_domain, cheapest_price, cheapest_registrar = suggest_cheapest_tld(args.domain)
+    main()
