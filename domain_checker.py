@@ -8,12 +8,14 @@ from datetime import datetime
 import socket
 import PySimpleGUI as sg
 import threading
+import time
 
 # Load environment variables
 load_dotenv()
 EXCHANGE_RATE = os.getenv('EXCHANGE_RATE')
 base_currency = 'USD'
 target_currency = 'EUR'
+
 
 def usd_to_eur(usd_amount):
     url = f'https://v6.exchangerate-api.com/v6/{EXCHANGE_RATE}/latest/{base_currency}'
@@ -202,19 +204,42 @@ def get_domain_info(domain):
 
         return None
 
+
 def long_operation_wrapper(func, *args, **kwargs):
     def wrapper():
-        result = func(*args, **kwargs)
-        window.write_event_value('-THREAD-', (func.__name__, result))
+        window['-PROGRESS-'].update(visible=True)
+
+        # Start the actual operation in a separate thread
+        result = [None]
+        operation_thread = threading.Thread(target=lambda: result.__setitem__(0, func(*args, **kwargs)))
+        operation_thread.start()
+
+        # Update progress bar while waiting for the operation to complete
+        for i in range(100):
+            if not operation_thread.is_alive():
+                window['-PROGRESS-'].update(100)
+                break
+            window['-PROGRESS-'].update(i + 1)
+            window.refresh()
+            time.sleep(0.05)  # Adjust this value to control the speed of the progress bar
+
+        # Ensure the operation has completed
+        operation_thread.join()
+
+        window.write_event_value('-THREAD-', (func.__name__, result[0]))
+
     threading.Thread(target=wrapper, daemon=True).start()
+
 
 def create_main_window():
     layout = [
         [sg.Text("Enter a domain name:"), sg.Input(key="-DOMAIN-"), sg.Button("Check")],
         [sg.Multiline(size=(60, 15), key="-OUTPUT-", disabled=True)],
+        [sg.ProgressBar(100, orientation='h', size=(20, 20), key='-PROGRESS-', visible=False)],
         [sg.Button("Suggest Cheapest TLD"), sg.Button("Get Domain Info"), sg.Button("Exit")]
     ]
     return sg.Window("Domain Checker", layout)
+
 
 def main():
     global window
@@ -224,19 +249,23 @@ def main():
         event, values = window.read()
         if event == sg.WINDOW_CLOSED or event == "Exit":
             break
-        elif event == "Check":
+        elif event in ("Check", "Suggest Cheapest TLD", "Get Domain Info"):
             domain = values["-DOMAIN-"]
             window["-OUTPUT-"].update("")
-            long_operation_wrapper(find_lowest_price, domain)
-        elif event == "Suggest Cheapest TLD":
-            domain = values["-DOMAIN-"]
-            window["-OUTPUT-"].update("")
-            long_operation_wrapper(suggest_cheapest_tld, domain)
-        elif event == "Get Domain Info":
-            domain = values["-DOMAIN-"]
-            window["-OUTPUT-"].update("")
-            long_operation_wrapper(get_domain_info, domain)
+            window["Check"].update(disabled=True)
+            window["Suggest Cheapest TLD"].update(disabled=True)
+            window["Get Domain Info"].update(disabled=True)
+            if event == "Check":
+                long_operation_wrapper(find_lowest_price, domain)
+            elif event == "Suggest Cheapest TLD":
+                long_operation_wrapper(suggest_cheapest_tld, domain)
+            elif event == "Get Domain Info":
+                long_operation_wrapper(get_domain_info, domain)
         elif event == "-THREAD-":
+            window['-PROGRESS-'].update(visible=False)
+            window["Check"].update(disabled=False)
+            window["Suggest Cheapest TLD"].update(disabled=False)
+            window["Get Domain Info"].update(disabled=False)
             func_name, result = values[event]
             if func_name == "find_lowest_price":
                 best_registrar, lowest_price = result
