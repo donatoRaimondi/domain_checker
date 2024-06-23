@@ -1,4 +1,4 @@
 requests==2.27.1
 python-dotenv==0.19.2
-whois==1.20240129.2
+python-whois ==0.9.4
 PySimpleGUI==5.0.5
