@@ -2,21 +2,34 @@ import os
 import requests
 import argparse
 from dotenv import load_dotenv
-from forex_python.converter import CurrencyRates
 
 # Load environment variables
 load_dotenv()
 
-# Initialize CurrencyRates
-c = CurrencyRates()
+
+EXCHANGE_RATE = os.getenv('EXCHANGE_RATE')
+base_currency = 'USD'
+target_currency = 'EUR'
 
 def usd_to_eur(usd_amount):
+    url = f'https://v6.exchangerate-api.com/v6/{EXCHANGE_RATE}/latest/{base_currency}'
+
     try:
-        return c.convert('USD', 'EUR', usd_amount)
-    except Exception as e:
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an HTTPError for bad responses
+        data = response.json()
+        if response.status_code == 200:
+            exchange_rate = data['conversion_rates'][target_currency]
+            return usd_amount * exchange_rate
+        else:
+            print(f"Error fetching data: {data.get('error-type', 'Unknown error')}")
+            # Fallback to a fixed rate if API fails
+            return usd_amount * 0.92
+    except requests.exceptions.RequestException as e:
         print(f"Error converting currency: {e}")
         # Fallback to a fixed rate if API fails
-        return usd_amount * 0.92  # You can update this fallback rate periodically
+        return usd_amount * 0.92
+
 
 # GoDaddy API credentials
 GODADDY_API_KEY = os.getenv('GODADDY_API_KEY')
@@ -32,11 +45,7 @@ GANDI_REQ_HEADERS = {
     'Authorization': f'Apikey {GANDI_API_KEY}',
     'Content-Type': 'application/json'
 }
-GANDI_QUERYSTRING= {
-    "name":"example.com",
-    "processes":["create","transfer"],
-    "grid":"C"
-}
+
 # GoDaddy API functions
 def get_godaddy_request_url(check_domain):
     return f"https://api.ote-godaddy.com/v1/domains/available?domain={check_domain}"
@@ -106,6 +115,7 @@ def check_gandi_availability(check_domain):
 
     return None
 
+
 def find_lowest_price(domain):
     prices = {
         "GoDaddy.com": check_godaddy_availability(domain),
@@ -116,6 +126,7 @@ def find_lowest_price(domain):
     if not valid_prices:
         return None, None
     return min(valid_prices.items(), key=lambda x: x[1])
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Check domain availability and pricing")
