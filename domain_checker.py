@@ -1,12 +1,14 @@
 import os
 import requests
 import argparse
+import whois
+import itertools
 from dotenv import load_dotenv
+import datetime
+import socket
 
 # Load environment variables
 load_dotenv()
-
-
 EXCHANGE_RATE = os.getenv('EXCHANGE_RATE')
 base_currency = 'USD'
 target_currency = 'EUR'
@@ -128,6 +130,81 @@ def find_lowest_price(domain):
     return min(valid_prices.items(), key=lambda x: x[1])
 
 
+# compare tld's with and gives a suggestion to the user based on the searched domain
+def suggest_cheapest_tld(base_domain):
+    # List of common TLDs to check
+    tlds = ['.com', '.net', '.org', '.io', '.co', '.info', '.biz', '.me']
+
+    # Split the base domain to get the name without TLD
+    domain_parts = base_domain.split('.')
+    domain_name = domain_parts[0]
+
+    cheapest_domain = None
+    cheapest_price = float('inf')
+    cheapest_registrar = None
+
+    print(f"Checking prices for variations of '{domain_name}':")
+
+    for tld in tlds:
+        full_domain = f"{domain_name}{tld}"
+        registrar, price = find_lowest_price(full_domain)
+
+        if price is not None:
+            print(f"{full_domain}: €{price:.2f}/yr at {registrar}")
+            if price < cheapest_price:
+                cheapest_domain = full_domain
+                cheapest_price = price
+                cheapest_registrar = registrar
+        else:
+            print(f"{full_domain}: Not available or pricing information not found")
+
+    if cheapest_domain:
+        print(f"\nCheapest option: {cheapest_domain} at €{cheapest_price:.2f}/yr from {cheapest_registrar}")
+    else:
+        print("\nNo available domains found among the checked TLDs.")
+
+    return cheapest_domain, cheapest_price, cheapest_registrar
+
+#
+def get_domain_info(domain):
+    try:
+        import whois
+    except ImportError:
+        print("The 'python-whois' library is not installed. Please install it using 'pip install python-whois'")
+        return None
+
+    try:
+        domain_info = whois.query(domain)
+
+        if domain_info:
+            print(f"\nDomain Information for {domain}:")
+            print(f"Registrar: {domain_info.registrar}")
+            print(f"Creation Date: {domain_info.creation_date}")
+            print(f"Expiration Date: {domain_info.expiration_date}")
+
+            if domain_info.expiration_date:
+                days_until_expiration = (domain_info.expiration_date - datetime.now()).days
+                print(f"Days until expiration: {days_until_expiration}")
+            else:
+                print("Expiration information not available")
+
+            return domain_info
+        else:
+            print(f"No WHOIS information available for {domain}")
+            return None
+
+    except Exception as e:
+        print(f"Error retrieving WHOIS information for {domain}: {str(e)}")
+
+        # Fallback to basic DNS lookup
+        try:
+            socket.gethostbyname(domain)
+            print(f"The domain {domain} exists (based on DNS lookup), but detailed WHOIS information is not available.")
+        except socket.gaierror:
+            print(f"The domain {domain} does not exist or is not registered.")
+
+        return None
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Check domain availability and pricing")
     parser.add_argument("domain", type=str, help="Domain name to be checked")
@@ -138,3 +215,10 @@ if __name__ == '__main__':
         print(f"The lowest price for {args.domain} is €{lowest_price:.2f}/yr at {best_registrar}")
     else:
         print(f"Unable to find pricing information for {args.domain}")
+
+    # Get domain information
+    domain_info = get_domain_info(args.domain)
+
+    # Suggest the cheapest TLD
+    print("\nSuggesting cheapest TLD options:")
+    cheapest_domain, cheapest_price, cheapest_registrar = suggest_cheapest_tld(args.domain)
