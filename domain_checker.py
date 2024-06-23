@@ -221,7 +221,7 @@ def long_operation_wrapper(func, *args, **kwargs):
                 break
             window['-PROGRESS-'].update(i + 1)
             window.refresh()
-            time.sleep(0.05)  # Adjust this value to control the speed of the progress bar
+            time.sleep(0.10)  # Adjust this value to control the speed of the progress bar
 
         # Ensure the operation has completed
         operation_thread.join()

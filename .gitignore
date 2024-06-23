@@ -1,2 +1,6 @@
 .env
 .idea
+build
+dist
+domain_checker.spec
+window-domain_icon-icons.com_52810.ico
