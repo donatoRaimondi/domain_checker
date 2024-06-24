@@ -147,14 +147,17 @@ def suggest_cheapest_tld(base_domain):
     cheapest_price = float('inf')
     cheapest_registrar = None
 
+    domain_prices = {}
+
     print(f"Checking prices for variations of '{domain_name}':")
 
     for tld in tlds:
         full_domain = f"{domain_name}{tld}"
-        registrar, price = find_lowest_price(full_domain)
+        registrar, price = find_lowest_price(full_domain)  # Assume this function exists
 
         if price is not None:
             print(f"{full_domain}: €{price:.2f}/yr at {registrar}")
+            domain_prices[full_domain] = {'price': price, 'registrar': registrar}
             if price < cheapest_price:
                 cheapest_domain = full_domain
                 cheapest_price = price
@@ -167,42 +170,31 @@ def suggest_cheapest_tld(base_domain):
     else:
         print("\nNo available domains found among the checked TLDs.")
 
-    return cheapest_domain, cheapest_price, cheapest_registrar
+    return domain_prices, cheapest_domain, cheapest_price, cheapest_registrar
 
-#
+
 def get_domain_info(domain):
     try:
+        # Retrieve WHOIS information
         domain_info = whois.whois(domain)
 
-        if domain_info:
-            print(f"\nDomain Information for {domain}:")
-            print(f"Registrar: {domain_info.registrar}")
-            print(f"Creation Date: {domain_info.creation_date}")
-            print(f"Expiration Date: {domain_info.expiration_date}")
-
-            if domain_info.expiration_date:
-                days_until_expiration = (domain_info.expiration_date - datetime.now()).days
-                print(f"Days until expiration: {days_until_expiration}")
-            else:
-                print("Expiration information not available")
-
-            return domain_info
-        else:
-            print(f"No WHOIS information available for {domain}")
-            return None
-
-    except Exception as e:
-        print(f"Error retrieving WHOIS information for {domain}: {str(e)}")
-
-        # Fallback to basic DNS lookup
         try:
-            ip_address = socket.gethostbyname(domain)
-            print(f"The domain {domain} exists (based on DNS lookup), but detailed WHOIS information is not available.")
-            print(f"IP Address: {ip_address}")
+            # Get the public IP address of the domain
+            public_address_ip = socket.gethostbyname(domain)
+            print(f"The domain {domain} exists (based on DNS lookup).")
+            print(f"IP Address: {public_address_ip}")
+
+            # Add the IP address to the domain_info dictionary
+            domain_info['public_address_ip'] = public_address_ip
         except socket.gaierror:
             print(f"The domain {domain} does not exist or is not registered.")
+            domain_info['public_address_ip'] = None
 
+        return domain_info
+    except Exception as e:
+        print(f"Error retrieving WHOIS information for {domain}: {str(e)}")
         return None
+
 
 
 def long_operation_wrapper(func, *args, **kwargs):
@@ -272,11 +264,15 @@ def main():
                 if best_registrar and lowest_price:
                     window["-OUTPUT-"].print(f"The lowest price for {values['-DOMAIN-']} is €{lowest_price:.2f}/yr at {best_registrar}")
                 else:
-                    window["-OUTPUT-"].print(f"Unable to find pricing information for {values['-DOMAIN-']}")
+                    window["-OUTPUT-"].print(f"Unable to find pricing information for {values['-DOMAIN-']}, the domain is already taken")
             elif func_name == "suggest_cheapest_tld":
-                cheapest_domain, cheapest_price, cheapest_registrar = result
+                domain_prices, cheapest_domain, cheapest_price, cheapest_registrar = result
+                if domain_prices:
+                    window["-OUTPUT-"].print("Checked TLDs and prices:")
+                    for domain, info in domain_prices.items():
+                        window["-OUTPUT-"].print(f"{domain}: €{info['price']:.2f}/yr at {info['registrar']}")
                 if cheapest_domain:
-                    window["-OUTPUT-"].print(f"Cheapest option: {cheapest_domain} at €{cheapest_price:.2f}/yr from {cheapest_registrar}")
+                    window["-OUTPUT-"].print(f"\nCheapest option: {cheapest_domain} at €{cheapest_price:.2f}/yr from {cheapest_registrar}")
                 else:
                     window["-OUTPUT-"].print("No available domains found among the checked TLDs.")
             elif func_name == "get_domain_info":
@@ -285,10 +281,15 @@ def main():
                     window["-OUTPUT-"].print(f"Registrar: {result.registrar}")
                     window["-OUTPUT-"].print(f"Creation Date: {result.creation_date}")
                     window["-OUTPUT-"].print(f"Expiration Date: {result.expiration_date}")
+                    window["-OUTPUT-"].print(f"Days left until expiration: {(result.expiration_date - datetime.now()).days}")
+                    window["-OUTPUT-"].print(f"Registrant organization: {result.registrant_organization}")
+                    window["-OUTPUT-"].print(f"Registrant address: {result.registrant_address}")
+                    window["-OUTPUT-"].print(f"IP address: {result.public_address_ip}")
                 else:
                     window["-OUTPUT-"].print(f"Unable to retrieve information for {values['-DOMAIN-']}")
 
     window.close()
+
 
 if __name__ == '__main__':
     main()
