@@ -1,5 +1,6 @@
 import os
 import requests
+import http.client
 import argparse
 import whois
 import itertools
@@ -51,8 +52,6 @@ GANDI_REQ_HEADERS = {
     'Authorization': f'Apikey {GANDI_API_KEY}',
     'Content-Type': 'application/json'
 }
-
-# GoDaddy API functions
 def get_godaddy_request_url(check_domain):
     return f"https://api.ote-godaddy.com/v1/domains/available?domain={check_domain}"
 
@@ -120,7 +119,6 @@ def check_gandi_availability(check_domain):
         print(f"Error during Gandi API request: {e}")
 
     return None
-
 
 def find_lowest_price(domain):
     prices = {
